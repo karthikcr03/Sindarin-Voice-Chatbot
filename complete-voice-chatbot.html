@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chatbot - Sindarin</title>
+    <script src="https://api.prod.centralus.az.sindarin.tech/PersonaClientPublicV2?apikey=#########################"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="icon" href="data:image/png;base64,">
+</head>
+<body class="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center min-h-screen">
+    
+    <div class="flex justify-center items-center min-h-screen">
+        <div class="bg-white bg-opacity-90 p-10 rounded-2xl shadow-2xl w-full max-w-3xl transform transition-all hover:scale-105 relative">
+            <h2 class="text-3xl font-extrabold text-center text-gray-900 mb-6 tracking-tight">Sindarin Voice Chatbot</h2>
+    
+            <!-- Buttons -->
+            <div class="flex justify-between mb-6">
+                <button id="startVoice" class="bg-blue-600 text-white px-5 py-3 rounded-full font-semibold shadow-md hover:bg-blue-700 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center w-32">
+                    <span class="mr-2">🎤</span> Start
+                </button>
+                <button id="pauseVoice" class="bg-yellow-500 text-white px-5 py-3 rounded-full font-semibold shadow-md hover:bg-yellow-600 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center w-32">
+                    <span class="mr-2">⏸️</span> Pause
+                </button>
+                <button id="resumeVoice" class="bg-green-500 text-white px-5 py-3 rounded-full font-semibold shadow-md hover:bg-green-600 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center w-32">
+                    <span class="mr-2">▶️</span> Resume
+                </button>
+                <button id="endVoice" class="bg-red-600 text-white px-5 py-3 rounded-full font-semibold shadow-md hover:bg-red-700 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center w-32">
+                    <span class="mr-2">🛑</span> End
+                </button>
+                <button id="transcription" class="bg-purple-600 text-white px-5 py-3 rounded-full font-semibold shadow-md hover:bg-purple-700 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-300 flex items-center justify-center w-32">
+                    <span class="mr-2">📝</span> Transcribe
+                </button>
+            </div>
+    
+            <!-- Response Area (Initially Hidden, Expands to Half Page) -->
+            <div id="responseContainer" class="overflow-hidden transition-all duration-500 ease-in-out max-h-0">
+                <div class="bg-gray-100 p-6 rounded-xl shadow-inner border border-gray-200 glow-effect h-[50vh] overflow-y-auto">
+                    <div id="botResponse" class="text-gray-700 font-medium">Ready to chat!</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .glow-effect {
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+    </style>
+
+    <script>
+        let personaClient;
+        let recognition;
+        let isListening = false;
+        let isSpeaking = false;
+        let isChatInitialized = false;
+        let conversationHistory = [];
+
+        async function initChat() {
+            if (isChatInitialized) return;
+            const API_KEY = "############################"; // Replace with your actual API Key
+
+            if (!window.PersonaClient) {
+                console.error("❌ Sindarin SDK not loaded!");
+                document.getElementById("botResponse").innerHTML = "SDK not loaded!";
+                return;
+            }
+
+            personaClient = new window.PersonaClient.default(API_KEY);
+
+            try {
+                await personaClient.init({
+                    userId: "admin123456",
+                    personaName: "Concierge",
+                    options: {
+                        debugMode: true,
+                        streamTranscripts: true,
+                        shouldNotSaveConversation: false // Changed to save conversation
+                    }
+                });
+                isChatInitialized = true;
+                configurePersonaEvents();
+                console.log("✅ Sindarin SDK initialized.");
+            } catch (error) {
+                console.error("❌ Initialization error:", error);
+                document.getElementById("botResponse").innerHTML = "Initialization failed!";
+            }
+        }
+
+        function configurePersonaEvents() {
+            personaClient.on("messages_update", (messages) => {
+                console.log("📩 Raw messages_update event received:", messages);
+                
+                // Handle different possible data structures
+                let processedMessages = messages;
+                
+                // Check if messages contains a nested messages array
+                if (!Array.isArray(messages) && messages && messages.messages && Array.isArray(messages.messages)) {
+                    console.log("Extracting messages from nested structure");
+                    processedMessages = messages.messages;
+                }
+                
+                if (!Array.isArray(processedMessages)) {
+                    console.error("Could not extract valid messages array:", messages);
+                    processedMessages = [];
+                }
+                
+                console.log("Processed messages for storage:", processedMessages);
+                
+                // Store the messages in our history
+                conversationHistory = processedMessages;
+                
+                // Test-add some messages if none are present (for debugging)
+                if (conversationHistory.length === 0) {
+                    console.log("Adding test messages for debugging");
+                    conversationHistory = [
+                        { role: "user", text: "Hello, can you help me?" },
+                        { role: "assistant", text: "Hi there! I'm here to help. What can I do for you?" }
+                    ];
+                }
+                
+                // Update the current response for immediate feedback
+                let responseText = "No response yet.";
+                if (processedMessages.length > 0) {
+                    const lastMessage = processedMessages[processedMessages.length - 1];
+                    
+                    // Try different properties to get the text content
+                    if (lastMessage.text && typeof lastMessage.text === 'string') {
+                        responseText = lastMessage.text;
+                    } else if (lastMessage.content && typeof lastMessage.content === 'string') {
+                        responseText = lastMessage.content;
+                    } else if (lastMessage.message && typeof lastMessage.message === 'string') {
+                        responseText = lastMessage.message;
+                    }
+                    
+                    console.log("Latest response text:", responseText);
+                }
+                
+                // Update display based on container state
+                if (document.getElementById("responseContainer").style.maxHeight === "0px" || 
+                    document.getElementById("responseContainer").style.maxHeight === "") {
+                    document.getElementById("botResponse").innerHTML = responseText;
+                    console.log("Updated bot response with latest message");
+                } else {
+                    displayConversationHistory();
+                    console.log("Updated full conversation display");
+                }
+                
+                if (isSpeaking) speak(responseText);
+            });
+            
+            // Additional event listeners for other Sindarin events
+            personaClient.on("error", (error) => {
+                console.error("❌ Sindarin error:", error);
+            });
+            
+            personaClient.on("conversation_started", () => {
+                console.log("🎭 Conversation started");
+            });
+            
+            personaClient.on("conversation_ended", () => {
+                console.log("🛑 Conversation ended");
+            });
+        }
+
+        function displayConversationHistory() {
+            console.log("🔍 Displaying conversation history...");
+            console.log("Raw conversation history:", conversationHistory);
+            console.log("History type:", typeof conversationHistory);
+            console.log("History length:", Array.isArray(conversationHistory) ? conversationHistory.length : "Not an array");
+            
+            if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+                let historyHTML = "";
+                
+                conversationHistory.forEach((msg, index) => {
+                    console.log(`Processing message ${index}:`, msg);
+                    
+                    // Handle different message formats
+                    let role = "Unknown";
+                    let text = "";
+                    console.log(index);
+                    // Try to extract role information
+                    if (msg.role) {
+                        role = msg.role === "assistant" ? "Bot" : "You";
+                        console.log('Using role from msg.role: ${role}');
+                    } else if (msg.sender) {
+                        role = msg.sender === "bot" ? "Bot" : "You";
+                        console.log('Using role from msg.sender: ${role}');
+                    } else if (index === 0) {
+                        // If no role info, assume alternating pattern
+                        role = "Bot";
+                        console.log('Using alternating role pattern: ${role}');
+                    } else if (index % 2 === 0) {
+                        // If no role info, assume alternating pattern
+                        role = "Bot";
+                        console.log('Using alternating role pattern: ${role}');
+                    }else {
+                        role = "You";
+                        console.log('Using alternating role pattern: ${role}');
+                    }
+                    
+                    // Try to extract text content
+                    if (msg.text && typeof msg.text === 'string') {
+                        text = msg.text;
+                        console.log(`Using text from msg.text: ${text.substring(0, 30)}...`);
+                    } else if (msg.content && typeof msg.content === 'string') {
+                        text = msg.content;
+                        console.log(`Using text from msg.content: ${text.substring(0, 30)}...`);
+                    } else if (msg.message && typeof msg.message === 'string') {
+                        text = msg.message;
+                        console.log(`Using text from msg.message: ${text.substring(0, 30)}...`);
+                    } else {
+                        console.log("No text content found in message:", msg);
+                    }
+                    
+                    // Only add messages that have actual content
+                    if (text && text !== "undefined") {
+                        let cleanText = text.trim();
+                        if (cleanText) {
+                            historyHTML += `<p class="mb-3 pb-2 border-b border-gray-200"><strong class="text-${role === 'Bot' ? 'blue' : 'green'}-600">${role}:</strong> ${cleanText}</p>`;
+                            console.log(`Added message to display: ${role}: ${cleanText.substring(0, 30)}...`);
+                        } else {
+                            console.log("Skipped empty message");
+                        }
+                    } else {
+                        console.log("Skipped undefined or empty message content");
+                    }
+                });
+                
+                if (historyHTML) {
+                    document.getElementById("botResponse").innerHTML = historyHTML;
+                    console.log("✅ Updated display with conversation history");
+                } else {
+                    document.getElementById("botResponse").innerHTML = "<p class='text-center text-gray-500'>No displayable conversation content found.</p>";
+                    console.log("⚠️ No displayable content was found in the conversation history");
+                }
+            } else {
+                document.getElementById("botResponse").innerHTML = "<p class='text-center text-gray-500'>No conversation history available yet. Start speaking to begin a conversation.</p>";
+                console.log("⚠️ No conversation history available to display");
+            }
+        }
+
+        async function startVoice() {
+            console.log("🎤 Starting voice chat...");
+            await initChat();
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.error("❌ Speech recognition not supported.");
+                document.getElementById("botResponse").innerHTML = "Speech recognition not supported!";
+                return;
+            }
+            
+            if (isListening) {
+                console.log("Already listening, no need to restart");
+                return;
+            }
+            
+            isListening = true;
+            isSpeaking = true;
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = "en-US";
+
+            recognition.onstart = () => {
+                console.log("🎤 Voice recognition started...");
+                if (document.getElementById("responseContainer").style.maxHeight === "0px" || 
+                    document.getElementById("responseContainer").style.maxHeight === "") {
+                    document.getElementById("botResponse").innerHTML = "Listening...";
+                }
+            };
+            
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                console.log("🎤 Recognized speech:", transcript);
+                
+                // Add user message to conversation history immediately for better UX
+                conversationHistory.push({ role: "user", text: transcript });
+                displayConversationHistory();
+                
+                // Send message to Sindarin
+                console.log("📤 Sending message to Sindarin:", transcript);
+                personaClient.sendMessage(transcript);
+            };
+            
+            recognition.onerror = (event) => {
+                console.error("❌ Speech recognition error:", event.error);
+                document.getElementById("botResponse").innerHTML = `Recognition error: ${event.error}`;
+            };
+            
+            recognition.onend = () => {
+                console.log("🛑 Voice recognition ended, will restart if still active.");
+                isListening = false;
+                
+                // Automatically restart voice recognition if still active
+                if (isChatInitialized && isSpeaking && !isListening) {
+                    setTimeout(() => {
+                        if (isChatInitialized && isSpeaking) {
+                            console.log("🔄 Restarting voice recognition...");
+                            recognition.start();
+                            isListening = true;
+                        }
+                    }, 1000);
+                }
+            };
+
+            try {
+                recognition.start();
+                console.log("🎤 Recognition started successfully");
+            } catch (error) {
+                console.error("❌ Error starting recognition:", error);
+                document.getElementById("botResponse").innerHTML = "Failed to start voice recognition!";
+            }
+        }
+
+        async function pauseVoice() {
+            console.log("⏸️ Pausing voice chat...");
+            if (!personaClient || !isChatInitialized) {
+                console.error("❌ Chatbot not initialized!");
+                document.getElementById("botResponse").innerHTML = "Chatbot not ready!";
+                return;
+            }
+
+            try {
+                await personaClient.pause();
+                if (recognition && isListening) {
+                    recognition.stop();
+                    isListening = false;
+                }
+                if (isSpeaking) {
+                    speechSynthesis.cancel();
+                    isSpeaking = false;
+                }
+                console.log("⏸️ Chatbot paused.");
+                document.getElementById("botResponse").innerHTML = "Conversation paused.";
+            } catch (error) {
+                console.error("❌ Error pausing chatbot:", error);
+                document.getElementById("botResponse").innerHTML = "Error pausing!";
+            }
+        }
+
+        async function resumeVoice() {
+            console.log("▶️ Resuming voice chat...");
+            if (!personaClient || !isChatInitialized) {
+                console.error("❌ Chatbot not initialized!");
+                document.getElementById("botResponse").innerHTML = "Chatbot not ready!";
+                return;
+            }
+
+            try {
+                await personaClient.resume();
+                isSpeaking = true;
+                startVoice(); // Restart voice recognition and speaking
+                console.log("▶️ Chatbot resumed.");
+            } catch (error) {
+                console.error("❌ Error resuming chatbot:", error);
+                document.getElementById("botResponse").innerHTML = "Error resuming!";
+            }
+        }
+
+        async function endVoice() {
+            console.log("🛑 Ending voice chat...");
+            if (!personaClient || !isChatInitialized) {
+                console.error("❌ Chatbot not initialized!");
+                document.getElementById("botResponse").innerHTML = "Chatbot not ready!";
+                return;
+            }
+
+            try {
+                await personaClient.end();
+                if (recognition && isListening) {
+                    recognition.stop();
+                    recognition.abort();
+                    isListening = false;
+                }
+                if (isSpeaking) {
+                    speechSynthesis.cancel();
+                    isSpeaking = false;
+                }
+                isChatInitialized = false;
+                personaClient = null;
+                console.log("🛑 Chatbot session ended.");
+                document.getElementById("botResponse").innerHTML = "Conversation ended.";
+            } catch (error) {
+                console.error("❌ Error ending chatbot:", error);
+                document.getElementById("botResponse").innerHTML = "Error ending!";
+            }
+        }
+
+        function speak(text) {
+            if (!isSpeaking) return;
+
+            console.log("🔊 Speaking response:", text.substring(0, 30) + "...");
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.onstart = () => { 
+                console.log("🔊 Speech synthesis started");
+                isSpeaking = true; 
+            };
+            utterance.onend = () => { 
+                console.log("🔊 Speech synthesis ended");
+                isSpeaking = false; 
+                // Resume listening after speaking finishes
+                if (isChatInitialized && !isListening) {
+                    setTimeout(() => {
+                        if (isChatInitialized) {
+                            console.log("🔄 Resuming listening after speaking");
+                            isSpeaking = true;
+                            if (recognition) {
+                                recognition.start();
+                                isListening = true;
+                            }
+                        }
+                    }, 500);
+                }
+            };
+            utterance.onerror = (error) => {
+                console.error("❌ Speech synthesis error:", error);
+                isSpeaking = false;
+            };
+            
+            speechSynthesis.speak(utterance);
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            console.log("🚀 Application initialized");
+            
+            document.getElementById("startVoice").addEventListener("click", startVoice);
+            document.getElementById("pauseVoice").addEventListener("click", pauseVoice);
+            document.getElementById("resumeVoice").addEventListener("click", resumeVoice);
+            document.getElementById("endVoice").addEventListener("click", endVoice);
+            
+            // Enhanced transcription button handling
+            document.getElementById("transcription").addEventListener("click", function() {
+                console.log("📝 Transcribe button clicked");
+                let responseContainer = document.getElementById("responseContainer");
+                
+                if (responseContainer.style.maxHeight === "0px" || responseContainer.style.maxHeight === "") {
+                    console.log("📝 Opening transcript panel");
+                    responseContainer.style.maxHeight = "50vh"; // Expand to half the screen height
+                    
+                    // Display conversation history or a message if none exists
+                    if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+                        console.log(`📝 Displaying ${conversationHistory.length} messages in transcript`);
+                        displayConversationHistory();
+                    } else {
+                        console.log("📝 No conversation history to display");
+                        document.getElementById("botResponse").innerHTML = 
+                            "<p class='text-center text-gray-500'>No conversation history yet. Start talking to generate a transcript.</p>";
+                    }
+                } else {
+                    console.log("📝 Closing transcript panel");
+                    responseContainer.style.maxHeight = "0px"; // Collapse
+                }
+            });
+            
+            // For testing only - add mock conversation data
+            console.log("Adding mock conversation data for testing");
+            window.addTestData = function() {
+                conversationHistory = [
+                    { role: "user", text: "Hello, how are you today?" },
+                    { role: "assistant", text: "I'm doing well, thank you! How can I help you today?" },
+                    { role: "user", text: "Can you tell me about the weather?" },
+                    { role: "assistant", text: "I don't have real-time weather data, but I'd be happy to discuss weather patterns or help you find a weather service." }
+                ];
+                console.log("Test data added:", conversationHistory);
+                return "Test data added successfully";
+            };
+        });
+    </script>
+</body>
+</html>
