@@ -21,7 +21,7 @@ Deployed as a fully functional **standalone web app**, this project replicates t
 
 ## 🖼️ Preview
 
-![Chatbot Screenshot](d82eb8d4-e4f4-409b-a074-0442c57a39c3.png)
+![Chatbot Screenshot]((https://github.com/user-attachments/assets/3bf45734-e8ff-4ed2-8498-eb646ccdfa39)
 
 ---
 
